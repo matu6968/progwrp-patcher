@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	pefile "github.com/saferwall/pe"
 )
 
 // Mapping of original DLL names to replacement names
@@ -164,16 +166,117 @@ func copyBlob(arch, name, targetDir string) error {
 	return err
 }
 
-func patchFile(path, arch string) error {
-	// ... existing patch logic (OS version + imports) ...
-	// After patching, deploy arch-specific helper libs
-	dir := filepath.Dir(path)
-	for _, rep := range mapping {
-		if err := copyBlob(arch, rep, dir); err != nil {
-			fmt.Printf("warning: failed to copy blob %s for %s: %v\n", rep, arch, err)
-		} else {
-			fmt.Printf("deployed %s (%s) to %s\n", rep, arch, dir)
+// isProgwrpFile checks if a file is a progwrp replacement DLL that should be skipped
+func isProgwrpFile(filename string) bool {
+	// Get all replacement DLL names from the mapping
+	for _, replacementName := range mapping {
+		if strings.EqualFold(filepath.Base(filename), replacementName) {
+			return true
 		}
+	}
+	return false
+}
+
+// rvaToOffset converts a Relative Virtual Address (RVA) to a file offset using the section headers
+func rvaToOffset(data []byte, rva uint32) (uint32, error) {
+	if len(data) < 0x40 || string(data[:2]) != "MZ" {
+		return 0, fmt.Errorf("not a PE file")
+	}
+	e_lfanew := binary.LittleEndian.Uint32(data[0x3C:0x40])
+	sections := int(binary.LittleEndian.Uint16(data[e_lfanew+6 : e_lfanew+8]))
+	optionalHeaderSize := binary.LittleEndian.Uint16(data[e_lfanew+0x14 : e_lfanew+0x16])
+	sectionTableOffset := e_lfanew + 0x18 + uint32(optionalHeaderSize)
+
+	for i := 0; i < sections; i++ {
+		entry := sectionTableOffset + uint32(i*40)
+		if int(entry+40) > len(data) {
+			break
+		}
+		virtualAddress := binary.LittleEndian.Uint32(data[entry+12 : entry+16])
+		sizeOfRawData := binary.LittleEndian.Uint32(data[entry+16 : entry+20])
+		pointerToRawData := binary.LittleEndian.Uint32(data[entry+20 : entry+24])
+		if rva >= virtualAddress && rva < virtualAddress+sizeOfRawData {
+			return pointerToRawData + (rva - virtualAddress), nil
+		}
+	}
+	return 0, fmt.Errorf("RVA 0x%x not found in any section", rva)
+}
+
+func patchFile(path, arch string) error {
+	// Read the entire file
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %v", err)
+	}
+
+	// Open with saferwall/pe
+	pe, err := pefile.New(path, &pefile.Options{Fast: false})
+	if err != nil {
+		return fmt.Errorf("failed to open PE file: %v", err)
+	}
+	if err := pe.Parse(); err != nil {
+		return fmt.Errorf("failed to parse PE file: %v", err)
+	}
+
+	patched := false
+	for _, imp := range pe.Imports {
+		origDLL := imp.Name
+		lowDLL := strings.ToLower(origDLL)
+		if replacement, ok := mapping[lowDLL]; ok {
+			fmt.Printf("patching import: %s -> %s\n", origDLL, replacement)
+			needle := []byte(origDLL + "\x00")
+			replacementBytes := []byte(replacement + "\x00")
+			if len(replacementBytes) > len(needle) {
+				return fmt.Errorf("replacement name too long for %s", origDLL)
+			}
+			for i := 0; i < len(data)-len(needle); i++ {
+				if string(data[i:i+len(needle)]) == string(needle) {
+					copy(data[i:i+len(replacementBytes)], replacementBytes)
+					for j := i + len(replacementBytes); j < i+len(needle); j++ {
+						data[j] = 0
+					}
+					patched = true
+				}
+			}
+		}
+	}
+	if patched {
+		// Write to a new file to avoid file lock issues
+		outPath := path[:len(path)-len(filepath.Ext(path))] + "_patched" + filepath.Ext(path)
+		if err := os.WriteFile(outPath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write patched file: %v", err)
+		}
+		fmt.Printf("successfully patched %s -> %s\n", path, outPath)
+
+		// Only copy progwrp DLLs that are actually imported by the patched file
+		pePatched, err := pefile.New(outPath, &pefile.Options{Fast: false})
+		if err == nil && pePatched.Parse() == nil {
+			imported := make(map[string]bool)
+			fmt.Printf("[DEBUG] DLLs imported by patched file: ")
+			for _, imp := range pePatched.Imports {
+				lowDLL := strings.ToLower(imp.Name)
+				fmt.Printf("%s ", lowDLL)
+				imported[lowDLL] = true
+			}
+			fmt.Printf("\n[DEBUG] Mapping contents:\n")
+			for k, v := range mapping {
+				fmt.Printf("  key: '%s' (len=%d), value: '%s' (len=%d)\n", k, len(k), v, len(v))
+			}
+			fmt.Printf("[DEBUG] Copying progwrp DLLs: ")
+			dir := filepath.Dir(outPath)
+			for dll := range imported {
+				fmt.Printf("%s ", dll)
+				if err := copyBlob(arch, dll, dir); err != nil {
+					fmt.Printf("\nwarning: failed to copy blob %s for %s: %v\n", dll, arch, err)
+				} else {
+					fmt.Printf("\ndeployed %s (%s) to %s\n", dll, arch, dir)
+				}
+			}
+		} else {
+			fmt.Printf("warning: could not enumerate imports for DLL copying in %s\n", outPath)
+		}
+	} else {
+		fmt.Printf("no imports to patch in %s\n", path)
 	}
 	return nil
 }
@@ -229,6 +332,12 @@ func main() {
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext != ".exe" && ext != ".dll" {
+			return nil
+		}
+
+		// Skip progwrp replacement DLLs
+		if isProgwrpFile(path) {
+			fmt.Printf("skipping progwrp file: %s\n", path)
 			return nil
 		}
 

@@ -14,7 +14,7 @@ It patches the binary to use the progwrp .dll files to call the Windows kernel f
 
 ## How to use it?
 
-Go 1.10 or higher is required to build the progwrp-patcher executable, which means Windows XP or higher (if you are running Windows) is required to run the progwrp-patcher executable.
+Go 1.15 or higher is required to build the progwrp-patcher executable, which means technically per Go spec Windows 7 or higher (if you are running Windows) is required to run the progwrp-patcher executable, but since you can patch the patcher itself to work on Windows XP, you can use it on Windows XP.
 
 If you are patching a binary to work on Windows XP outside of Windows or a newer Windows machine, keep in mind you need to copy the binary (and the relevant .dll files from progwrp) to the target Windows machine to use it.
 
