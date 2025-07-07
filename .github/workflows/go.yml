@@ -5,8 +5,8 @@ name: Build and Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 jobs:
   build:
@@ -81,12 +81,12 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Release Assets
-      uses: softprops/action-gh-release@v2
+      run: |
+        # Get the latest release tag
+        LATEST_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name')
+        echo "Uploading to release: $LATEST_TAG"
+        
+        # Upload the binary with clobber to replace existing one
+        gh release upload "$LATEST_TAG" progwrp-patcher-${{ matrix.suffix }} --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        files: progwrp-patcher-${{ matrix.suffix }}
-        tag_name: ${{ github.ref_name }}
-        name: Release ${{ github.ref_name }}
-        draft: false
-        prerelease: false
