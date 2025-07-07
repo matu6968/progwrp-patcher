@@ -203,7 +203,7 @@ func rvaToOffset(data []byte, rva uint32) (uint32, error) {
 }
 
 // patchVersionFields patches the PE Optional Header version fields for XP compatibility
-func patchVersionFields(filePath string) error {
+func patchVersionFields(filePath string, debug bool) error {
 	// Read the file data
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -238,21 +238,25 @@ func patchVersionFields(filePath string) error {
 	}
 
 	if int(majorOSVerOff+2) <= len(data) && int(minorOSVerOff+2) <= len(data) && int(majorSubVerOff+2) <= len(data) && int(minorSubVerOff+2) <= len(data) {
-		fmt.Printf("[DEBUG] Offsets (manual): majorOS=%#x minorOS=%#x majorSub=%#x minorSub=%#x\n", majorOSVerOff, minorOSVerOff, majorSubVerOff, minorSubVerOff)
-		fmt.Printf("[DEBUG] Before: majorOS=%d minorOS=%d majorSub=%d minorSub=%d\n",
-			binary.LittleEndian.Uint16(data[majorOSVerOff:majorOSVerOff+2]),
-			binary.LittleEndian.Uint16(data[minorOSVerOff:minorOSVerOff+2]),
-			binary.LittleEndian.Uint16(data[majorSubVerOff:majorSubVerOff+2]),
-			binary.LittleEndian.Uint16(data[minorSubVerOff:minorSubVerOff+2]))
+		if debug {
+			fmt.Printf("[DEBUG] Offsets (manual): majorOS=%#x minorOS=%#x majorSub=%#x minorSub=%#x\n", majorOSVerOff, minorOSVerOff, majorSubVerOff, minorSubVerOff)
+			fmt.Printf("[DEBUG] Before: majorOS=%d minorOS=%d majorSub=%d minorSub=%d\n",
+				binary.LittleEndian.Uint16(data[majorOSVerOff:majorOSVerOff+2]),
+				binary.LittleEndian.Uint16(data[minorOSVerOff:minorOSVerOff+2]),
+				binary.LittleEndian.Uint16(data[majorSubVerOff:majorSubVerOff+2]),
+				binary.LittleEndian.Uint16(data[minorSubVerOff:minorSubVerOff+2]))
+		}
 		binary.LittleEndian.PutUint16(data[majorOSVerOff:majorOSVerOff+2], 5)
 		binary.LittleEndian.PutUint16(data[minorOSVerOff:minorOSVerOff+2], 1)
 		binary.LittleEndian.PutUint16(data[majorSubVerOff:majorSubVerOff+2], 5)
 		binary.LittleEndian.PutUint16(data[minorSubVerOff:minorSubVerOff+2], 1)
-		fmt.Printf("[DEBUG] After: majorOS=%d minorOS=%d majorSub=%d minorSub=%d\n",
-			binary.LittleEndian.Uint16(data[majorOSVerOff:majorOSVerOff+2]),
-			binary.LittleEndian.Uint16(data[minorOSVerOff:minorOSVerOff+2]),
-			binary.LittleEndian.Uint16(data[majorSubVerOff:majorSubVerOff+2]),
-			binary.LittleEndian.Uint16(data[minorSubVerOff:minorSubVerOff+2]))
+		if debug {
+			fmt.Printf("[DEBUG] After: majorOS=%d minorOS=%d majorSub=%d minorSub=%d\n",
+				binary.LittleEndian.Uint16(data[majorOSVerOff:majorOSVerOff+2]),
+				binary.LittleEndian.Uint16(data[minorOSVerOff:minorOSVerOff+2]),
+				binary.LittleEndian.Uint16(data[majorSubVerOff:majorSubVerOff+2]),
+				binary.LittleEndian.Uint16(data[minorSubVerOff:minorSubVerOff+2]))
+		}
 		fmt.Printf("patched subsystem/OS version to 5.1 (XP)\n")
 
 		// Write the version-patched data back to the file
@@ -264,7 +268,7 @@ func patchVersionFields(filePath string) error {
 	return nil
 }
 
-func patchFile(path, arch string) error {
+func patchFile(path, arch string, debug bool) error {
 	// Read the entire file
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -318,17 +322,21 @@ func patchFile(path, arch string) error {
 		fmt.Printf("successfully patched %s -> %s\n", path, outPath)
 
 		// Copy progwrp DLLs that are imported by the patched file
-		fmt.Printf("[DEBUG] DLLs imported by patched file: ")
-		for _, dll := range importedDlls {
-			fmt.Printf("%s ", dll)
-		}
-		fmt.Printf("\n[DEBUG] Mapping contents:\n")
-		for k, v := range mapping {
-			fmt.Printf("  key: '%s' (len=%d), value: '%s' (len=%d)\n", k, len(k), v, len(v))
+		if debug {
+			fmt.Printf("[DEBUG] DLLs imported by patched file: ")
+			for _, dll := range importedDlls {
+				fmt.Printf("%s ", dll)
+			}
+			fmt.Printf("\n[DEBUG] Mapping contents:\n")
+			for k, v := range mapping {
+				fmt.Printf("  key: '%s' (len=%d), value: '%s' (len=%d)\n", k, len(k), v, len(v))
+			}
 		}
 		fmt.Printf("[DEBUG] Copying progwrp DLLs: ")
 		for _, dll := range importedDlls {
-			fmt.Printf("%s ", dll)
+			if debug {
+				fmt.Printf("%s ", dll)
+			}
 			if err := copyBlob(arch, dll, filepath.Dir(outPath)); err != nil {
 				fmt.Printf("\nwarning: failed to copy blob %s for %s: %v\n", dll, arch, err)
 			} else {
@@ -337,7 +345,7 @@ func patchFile(path, arch string) error {
 		}
 
 		// Patch PE Optional Header for XP compatibility - done separately to avoid file locking
-		if err := patchVersionFields(outPath); err != nil {
+		if err := patchVersionFields(outPath, debug); err != nil {
 			fmt.Printf("warning: failed to patch version fields: %v\n", err)
 		}
 	} else {
@@ -351,6 +359,7 @@ func main() {
 	repo := flag.String("repo", "", "GitHub repo for blob releases (owner/repo)")
 	input := flag.String("i", ".", "file or directory to patch")
 	recurse := flag.Bool("r", false, "recurse into directories")
+	debug := flag.Bool("debug", false, "enable debug output")
 	flag.Parse()
 
 	if *repo == "" {
@@ -422,7 +431,7 @@ func main() {
 			}
 		}
 
-		if err := patchFile(path, arch); err != nil {
+		if err := patchFile(path, arch, *debug); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to patch %s: %v\n", path, err)
 		}
 		return nil

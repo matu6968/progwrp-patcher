@@ -1,0 +1,85 @@
+# This workflow will build a golang project for multiple platforms and create releases
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'progwrp*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            suffix: linux-amd64
+          - os: linux
+            arch: 386
+            suffix: linux-386
+          - os: linux
+            arch: arm
+            suffix: linux-arm
+          - os: linux
+            arch: arm64
+            suffix: linux-arm64
+          - os: windows
+            arch: amd64
+            suffix: windows-amd64.exe
+          - os: windows
+            arch: 386
+            suffix: windows-386.exe
+          - os: windows
+            arch: arm
+            suffix: windows-arm.exe
+          - os: windows
+            arch: arm64
+            suffix: windows-arm64.exe
+          - os: darwin
+            arch: amd64
+            suffix: darwin-amd64
+          - os: darwin
+            arch: arm64
+            suffix: darwin-arm64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20'
+
+    - name: Build
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+      run: go build -v -o progwrp-patcher-${{ matrix.suffix }} ./...
+
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./progwrp-patcher-${{ matrix.suffix }}
+        asset_name: progwrp-patcher-${{ matrix.suffix }}
+        asset_content_type: application/octet-stream
+
+  create_release:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
