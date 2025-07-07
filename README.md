@@ -41,3 +41,13 @@ Or if you want to patch all the binaries in a directory, you can use the followi
 progwrp-patcher.exe -i <directory to patch all files in> -r
 ```
 Running the above commands will download the progwrp .dll files (by default will point to the [progwrp-patcher](https://github.com/matu6968/progwrp-patcher) repo but you can specify a custom GitHub repository using `-repo owner/repository` that host the progwrp .dll files under the filename `progwrp_blobs-<arch>.zip` in the releases) if not present and patch the binaries which will also copy the required .dll files to the same directory as the binary.
+
+## FAQ
+
+### Why does my binary not work as expected after patching?
+
+progwrp is not a magical tool that can make all binaries compiled to only run on Windows 7+ run on Windows XP, certain Windows API functions are not implemented in progwrp and instead display a dialog message from what functions are not implemented, for example if you try to use the `GetErrorType` function (Usually Go binaries use this Windows API function), it will display a dialog message saying `Implemenation_GetErrorType` and crash the program upon closing the dialog. 
+
+Unfortunantely the creator of progwrp (aka win32ss) assumes all unimplemented functions that don't exist on XP will stop an application from running and do the above, until then you can try to use other tools that can patch the system to get the binary to work on Windows XP such as [OneCoreAPI](https://github.com/shorthorn-project/One-Core-API-Binaries) or if you are a application developer, you can try to implement something like [YY-Thunks](https://github.com/Chuyu-Team/YY-Thunks).
+
+If you are a user of progwrp, try patching a different program and post your results in the [Issue](https://github.com/matu6968/progwrp-patcher/issues/new) section.

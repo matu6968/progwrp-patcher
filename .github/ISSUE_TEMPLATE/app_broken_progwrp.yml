@@ -1,0 +1,94 @@
+name: Application Does Not Work with progwrp
+description: Report an application that fails to work with progwrp patching
+title: "[BROKEN] "
+labels: ["program does not work with progwrp"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an application that doesn't work with progwrp! This helps us track compatibility issues and understand limitations.
+        
+        Please fill out the form below with details about the problematic application.
+
+  - type: input
+    id: app-name
+    attributes:
+      label: Application Name
+      description: What is the name of the application that doesn't work with progwrp?
+      placeholder: "e.g., Notepad++, 7-Zip, etc."
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Application Version
+      description: What version of the application did you test?
+      placeholder: "e.g., 8.5.4, 23.01, etc."
+
+  - type: textarea
+    id: binary-source
+    attributes:
+      label: Where did you get the binary?
+      description: Please describe where you downloaded or obtained the application binary
+      placeholder: "e.g., Downloaded from official website, extracted from installer, etc. Provide a link to the binary if possible."
+    validations:
+      required: true
+
+  - type: textarea
+    id: patching-process
+    attributes:
+      label: Patching Process
+      description: Describe how you patched the application with progwrp
+      placeholder: "e.g., Used command: progwrp-patcher.exe -i application.exe, patched all DLLs in directory with -r flag, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Error Message or Behavior
+      description: What error message, crash, or unexpected behavior did you encounter?
+      placeholder: "e.g., Application crashes on startup, shows 'Implementation_GetErrorType' dialog then crashes, displays error message, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Please provide screenshots showing the error or crash. You can upload images directly or provide links.
+      placeholder: "Upload screenshots showing the error dialog, crash, or describe what you see when it fails"
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: What steps did you take that led to the failure?
+      placeholder: "e.g., 1. Downloaded application, 2. Ran progwrp-patcher.exe -i app.exe, 3. Tried to run patched app, 4. Got error message"
+
+  - type: textarea
+    id: system-info
+    attributes:
+      label: System Information
+      description: What Windows version and system specifications are you using?
+      placeholder: "e.g., Windows XP SP3, 2GB RAM, Intel Pentium 4, etc."
+
+  - type: textarea
+    id: additional-notes
+    attributes:
+      label: Additional Notes
+      description: Any other relevant information about your experience
+      placeholder: "e.g., Other tools tried, workarounds attempted, similar applications that do work, etc."
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      description: By submitting this issue, you confirm that:
+      options:
+        - label: The application fails to run or function properly on Windows XP after progwrp patching
+        - label: You have provided accurate information about the patching process and error
+        - label: You understand this is for tracking compatibility issues, not requesting immediate fixes
+    validations:
+      required: true

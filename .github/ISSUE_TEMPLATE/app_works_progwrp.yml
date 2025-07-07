@@ -1,0 +1,85 @@
+name: Application Works with progwrp
+description: Report an application that successfully works with progwrp patching
+title: "[WORKING] "
+labels: ["program works with progwrp"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting that an application works with progwrp! This helps us track compatibility and success stories.
+        
+        Please fill out the form below with details about the working application.
+
+  - type: input
+    id: app-name
+    attributes:
+      label: Application Name
+      description: What is the name of the application that works with progwrp?
+      placeholder: "e.g., Notepad++, 7-Zip, etc."
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Application Version
+      description: What version of the application did you test?
+      placeholder: "e.g., 8.5.4, 23.01, etc."
+
+  - type: textarea
+    id: binary-source
+    attributes:
+      label: Where did you get the binary?
+      description: Please describe where you downloaded or obtained the application binary
+      placeholder: "e.g., Downloaded from official website, extracted from installer, etc. Provide a link to the binary if possible."
+    validations:
+      required: true
+
+  - type: textarea
+    id: patching-process
+    attributes:
+      label: Patching Process
+      description: Describe how you patched the application with progwrp
+      placeholder: "e.g., Used command: progwrp-patcher.exe -i application.exe, patched all DLLs in directory with -r flag, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Please provide screenshots showing the application running successfully on Windows XP. You can upload images directly or provide links.
+      placeholder: "Upload screenshots showing the application running, or describe what you see when it works"
+
+  - type: textarea
+    id: functionality
+    attributes:
+      label: Functionality Tested
+      description: What features or functionality did you test and confirm working?
+      placeholder: "e.g., Basic file operations work, GUI displays correctly, specific features tested, etc."
+
+  - type: textarea
+    id: issues
+    attributes:
+      label: Any Issues or Limitations
+      description: Are there any problems, crashes, or limitations you encountered? (Optional)
+      placeholder: "e.g., Some features don't work, occasional crashes, performance issues, etc."
+
+  - type: textarea
+    id: additional-notes
+    attributes:
+      label: Additional Notes
+      description: Any other relevant information about your experience
+      placeholder: "e.g., System specifications, other tools used, workarounds applied, etc."
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      description: By submitting this issue, you confirm that:
+      options:
+        - label: The application actually runs and functions on Windows XP after progwrp patching
+        - label: You have provided accurate information about the patching process
+        - label: You understand this is for tracking working applications, not requesting support
+    validations:
+      required: true

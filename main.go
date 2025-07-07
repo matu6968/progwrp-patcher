@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	pefile "github.com/saferwall/pe"
@@ -361,6 +362,15 @@ func main() {
 	recurse := flag.Bool("r", false, "recurse into directories")
 	debug := flag.Bool("debug", false, "enable debug output")
 	flag.Parse()
+
+	// Check if running on Windows
+	// in the future once go 1.10 support will work then also check if it's really running on XP and display this message if not
+	if runtime.GOOS != "windows" {
+		fmt.Println("Note: This tool patches Windows executables for Windows XP compatibility.")
+		fmt.Println("Since you're not running on Windows, you'll need to copy the patched files")
+		fmt.Println("and progwrp DLLs to your target Windows machine to use them.")
+		fmt.Println()
+	}
 
 	if *repo == "" {
 		*repo = "matu6968/progwrp-patcher"
