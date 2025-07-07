@@ -7,6 +7,10 @@ on:
   workflow_dispatch:
     # Allow manual triggering
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   check-supermium-releases:
     runs-on: ubuntu-latest
@@ -165,28 +169,42 @@ jobs:
     - name: Get latest release for upload
       id: get_latest_release
       run: |
-        LATEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/latest --jq '.id')
-        echo "release_id=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+        # Check if there's a latest release
+        LATEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+        
+        if [ -z "$LATEST_RELEASE" ]; then
+          echo "No release found, creating one..."
+          # Create a release with the current date as tag
+          DATE_TAG=$(date +%Y%m%d)
+          gh release create "v0.0.0-$DATE_TAG" --title "Supermium Blobs Release $DATE_TAG" --notes "Auto-generated release for Supermium blobs update"
+          LATEST_RELEASE="v0.0.0-$DATE_TAG"
+        fi
+        
+        echo "release_tag=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+        echo "Using release: $LATEST_RELEASE"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: Delete existing blob archives
       run: |
+        LATEST_TAG="${{ steps.get_latest_release.outputs.release_tag }}"
+        
         # Get all assets for the latest release
-        ASSETS=$(gh api repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets --jq '.[] | select(.name | contains("progwrp_blobs")) | .id')
+        ASSETS=$(gh api repos/${{ github.repository }}/releases/latest --jq '.[] | select(.name | contains("progwrp_blobs")) | .id' 2>/dev/null || echo "")
         
         # Delete each existing asset
-        for asset_id in $ASSETS; do
-          echo "Deleting asset ID: $asset_id"
-          gh api repos/${{ github.repository }}/releases/assets/$asset_id -X DELETE
-        done
+        if [ -n "$ASSETS" ]; then
+          for asset_id in $ASSETS; do
+            echo "Deleting asset ID: $asset_id"
+            gh api repos/${{ github.repository }}/releases/assets/$asset_id -X DELETE
+          done
+        fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: Upload blob archives
       run: |
-        # Get the latest release tag
-        LATEST_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name')
+        LATEST_TAG="${{ steps.get_latest_release.outputs.release_tag }}"
         echo "Uploading to release: $LATEST_TAG"
         
         # Upload both zip files with clobber to replace existing ones
