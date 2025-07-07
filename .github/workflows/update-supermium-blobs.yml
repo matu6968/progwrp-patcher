@@ -183,25 +183,15 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Upload x86 blob archive
-      uses: actions/upload-release-asset@v1
+    - name: Upload blob archives
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets
-        asset_path: ./progwrp_blobs-x86.zip
-        asset_name: progwrp_blobs-x86.zip
-        asset_content_type: application/zip
-    
-    - name: Upload x86_64 blob archive
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets
-        asset_path: ./progwrp_blobs-x86_64.zip
-        asset_name: progwrp_blobs-x86_64.zip
-        asset_content_type: application/zip
+        files: |
+          progwrp_blobs-x86.zip
+          progwrp_blobs-x86_64.zip
+        update_existing: true
     
     - name: Update last processed release
       run: |
