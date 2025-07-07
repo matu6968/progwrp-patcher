@@ -202,6 +202,68 @@ func rvaToOffset(data []byte, rva uint32) (uint32, error) {
 	return 0, fmt.Errorf("RVA 0x%x not found in any section", rva)
 }
 
+// patchVersionFields patches the PE Optional Header version fields for XP compatibility
+func patchVersionFields(filePath string) error {
+	// Read the file data
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %v", err)
+	}
+
+	var (
+		optionalHeaderOffset uint32
+		magic                uint16
+	)
+	// Find the file offset of the Optional Header
+	// e_lfanew is at 0x3C
+	if len(data) >= 0x3C+4 {
+		e_lfanew := binary.LittleEndian.Uint32(data[0x3C:0x40])
+		optionalHeaderOffset = e_lfanew + 0x18 // PE header + FileHeader (20 bytes) = 0x18
+		magic = binary.LittleEndian.Uint16(data[optionalHeaderOffset : optionalHeaderOffset+2])
+	}
+
+	var majorOSVerOff, minorOSVerOff, majorSubVerOff, minorSubVerOff uint32
+	if magic == 0x10b { // PE32
+		majorOSVerOff = optionalHeaderOffset + 0x28
+		minorOSVerOff = optionalHeaderOffset + 0x2A
+		majorSubVerOff = optionalHeaderOffset + 0x30 // MajorSubsystemVersion
+		minorSubVerOff = optionalHeaderOffset + 0x32 // MinorSubsystemVersion
+	} else if magic == 0x20b { // PE32+
+		majorOSVerOff = optionalHeaderOffset + 0x28
+		minorOSVerOff = optionalHeaderOffset + 0x2A
+		majorSubVerOff = optionalHeaderOffset + 0x30 // MajorSubsystemVersion
+		minorSubVerOff = optionalHeaderOffset + 0x32 // MinorSubsystemVersion
+	} else {
+		return fmt.Errorf("unknown PE magic 0x%x, skipping version patch", magic)
+	}
+
+	if int(majorOSVerOff+2) <= len(data) && int(minorOSVerOff+2) <= len(data) && int(majorSubVerOff+2) <= len(data) && int(minorSubVerOff+2) <= len(data) {
+		fmt.Printf("[DEBUG] Offsets (manual): majorOS=%#x minorOS=%#x majorSub=%#x minorSub=%#x\n", majorOSVerOff, minorOSVerOff, majorSubVerOff, minorSubVerOff)
+		fmt.Printf("[DEBUG] Before: majorOS=%d minorOS=%d majorSub=%d minorSub=%d\n",
+			binary.LittleEndian.Uint16(data[majorOSVerOff:majorOSVerOff+2]),
+			binary.LittleEndian.Uint16(data[minorOSVerOff:minorOSVerOff+2]),
+			binary.LittleEndian.Uint16(data[majorSubVerOff:majorSubVerOff+2]),
+			binary.LittleEndian.Uint16(data[minorSubVerOff:minorSubVerOff+2]))
+		binary.LittleEndian.PutUint16(data[majorOSVerOff:majorOSVerOff+2], 5)
+		binary.LittleEndian.PutUint16(data[minorOSVerOff:minorOSVerOff+2], 1)
+		binary.LittleEndian.PutUint16(data[majorSubVerOff:majorSubVerOff+2], 5)
+		binary.LittleEndian.PutUint16(data[minorSubVerOff:minorSubVerOff+2], 1)
+		fmt.Printf("[DEBUG] After: majorOS=%d minorOS=%d majorSub=%d minorSub=%d\n",
+			binary.LittleEndian.Uint16(data[majorOSVerOff:majorOSVerOff+2]),
+			binary.LittleEndian.Uint16(data[minorOSVerOff:minorOSVerOff+2]),
+			binary.LittleEndian.Uint16(data[majorSubVerOff:majorSubVerOff+2]),
+			binary.LittleEndian.Uint16(data[minorSubVerOff:minorSubVerOff+2]))
+		fmt.Printf("patched subsystem/OS version to 5.1 (XP)\n")
+
+		// Write the version-patched data back to the file
+		if err := os.WriteFile(filePath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write version-patched file: %v", err)
+		}
+	}
+
+	return nil
+}
+
 func patchFile(path, arch string) error {
 	// Read the entire file
 	data, err := os.ReadFile(path)
@@ -219,6 +281,8 @@ func patchFile(path, arch string) error {
 	}
 
 	patched := false
+	var importedDlls []string // Track which DLLs will be imported after patching
+
 	for _, imp := range pe.Imports {
 		origDLL := imp.Name
 		lowDLL := strings.ToLower(origDLL)
@@ -238,6 +302,11 @@ func patchFile(path, arch string) error {
 					patched = true
 				}
 			}
+			// Add the replacement DLL to our list
+			importedDlls = append(importedDlls, strings.ToLower(replacement))
+		} else {
+			// Keep track of DLLs that weren't replaced
+			importedDlls = append(importedDlls, lowDLL)
 		}
 	}
 	if patched {
@@ -248,32 +317,28 @@ func patchFile(path, arch string) error {
 		}
 		fmt.Printf("successfully patched %s -> %s\n", path, outPath)
 
-		// Only copy progwrp DLLs that are actually imported by the patched file
-		pePatched, err := pefile.New(outPath, &pefile.Options{Fast: false})
-		if err == nil && pePatched.Parse() == nil {
-			imported := make(map[string]bool)
-			fmt.Printf("[DEBUG] DLLs imported by patched file: ")
-			for _, imp := range pePatched.Imports {
-				lowDLL := strings.ToLower(imp.Name)
-				fmt.Printf("%s ", lowDLL)
-				imported[lowDLL] = true
+		// Copy progwrp DLLs that are imported by the patched file
+		fmt.Printf("[DEBUG] DLLs imported by patched file: ")
+		for _, dll := range importedDlls {
+			fmt.Printf("%s ", dll)
+		}
+		fmt.Printf("\n[DEBUG] Mapping contents:\n")
+		for k, v := range mapping {
+			fmt.Printf("  key: '%s' (len=%d), value: '%s' (len=%d)\n", k, len(k), v, len(v))
+		}
+		fmt.Printf("[DEBUG] Copying progwrp DLLs: ")
+		for _, dll := range importedDlls {
+			fmt.Printf("%s ", dll)
+			if err := copyBlob(arch, dll, filepath.Dir(outPath)); err != nil {
+				fmt.Printf("\nwarning: failed to copy blob %s for %s: %v\n", dll, arch, err)
+			} else {
+				fmt.Printf("\ndeployed %s (%s) to %s\n", dll, arch, filepath.Dir(outPath))
 			}
-			fmt.Printf("\n[DEBUG] Mapping contents:\n")
-			for k, v := range mapping {
-				fmt.Printf("  key: '%s' (len=%d), value: '%s' (len=%d)\n", k, len(k), v, len(v))
-			}
-			fmt.Printf("[DEBUG] Copying progwrp DLLs: ")
-			dir := filepath.Dir(outPath)
-			for dll := range imported {
-				fmt.Printf("%s ", dll)
-				if err := copyBlob(arch, dll, dir); err != nil {
-					fmt.Printf("\nwarning: failed to copy blob %s for %s: %v\n", dll, arch, err)
-				} else {
-					fmt.Printf("\ndeployed %s (%s) to %s\n", dll, arch, dir)
-				}
-			}
-		} else {
-			fmt.Printf("warning: could not enumerate imports for DLL copying in %s\n", outPath)
+		}
+
+		// Patch PE Optional Header for XP compatibility - done separately to avoid file locking
+		if err := patchVersionFields(outPath); err != nil {
+			fmt.Printf("warning: failed to patch version fields: %v\n", err)
 		}
 	} else {
 		fmt.Printf("no imports to patch in %s\n", path)
