@@ -1,0 +1,215 @@
+name: Update Supermium Blobs
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+jobs:
+  check-supermium-releases:
+    runs-on: ubuntu-latest
+    outputs:
+      has-new-release: ${{ steps.check-releases.outputs.has-new-release }}
+      latest-release: ${{ steps.check-releases.outputs.latest-release }}
+      latest-release-id: ${{ steps.check-releases.outputs.latest-release-id }}
+    
+    steps:
+    - name: Check for new Supermium releases
+      id: check-releases
+      run: |
+        # Get the latest release from Supermium
+        LATEST_RELEASE=$(gh api repos/win32ss/supermium/releases/latest --jq '.tag_name')
+        LATEST_RELEASE_ID=$(gh api repos/win32ss/supermium/releases/latest --jq '.id')
+        
+        # Get the last processed release from our repo (stored in a file)
+        if [ -f ".last_supermium_release" ]; then
+          LAST_PROCESSED=$(cat .last_supermium_release)
+        else
+          LAST_PROCESSED=""
+        fi
+        
+        echo "Latest Supermium release: $LATEST_RELEASE"
+        echo "Last processed release: $LAST_PROCESSED"
+        
+        if [ "$LATEST_RELEASE" != "$LAST_PROCESSED" ]; then
+          echo "has-new-release=true" >> $GITHUB_OUTPUT
+          echo "latest-release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+          echo "latest-release-id=$LATEST_RELEASE_ID" >> $GITHUB_OUTPUT
+          echo "New release found: $LATEST_RELEASE"
+        else
+          echo "has-new-release=false" >> $GITHUB_OUTPUT
+          echo "No new release found"
+        fi
+
+  update-blobs:
+    needs: check-supermium-releases
+    if: needs.check-supermium-releases.outputs.has-new-release == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Setup environment
+      run: |
+        LATEST_RELEASE="${{ needs.check-supermium-releases.outputs.latest-release }}"
+        echo "Processing Supermium release: $LATEST_RELEASE"
+        
+        # Create temporary directories
+        mkdir -p temp/x86 temp/x86_64
+        
+        # Download blob list
+        cp blobs_list.txt temp/
+    
+    - name: Download and extract 32-bit release
+      run: |
+        LATEST_RELEASE="${{ needs.check-supermium-releases.outputs.latest-release }}"
+        
+        # Find the 32-bit non-setup zip file
+        RELEASE_ASSETS=$(gh api repos/win32ss/supermium/releases/latest --jq '.assets[] | select(.name | contains("32_non_setup.zip")) | .browser_download_url')
+        
+        if [ -n "$RELEASE_ASSETS" ]; then
+          echo "Downloading 32-bit release..."
+          wget -O temp/supermium_32.zip "$RELEASE_ASSETS"
+          
+          # Extract the zip
+          unzip -q temp/supermium_32.zip -d temp/extract_32/
+          
+          # Find the supermium_*_32 directory
+          SUP_DIR=$(find temp/extract_32/ -name "supermium_*_32" -type d | head -n 1)
+          
+          if [ -n "$SUP_DIR" ]; then
+            echo "Found Supermium directory: $SUP_DIR"
+            
+            # Extract blob files
+            while IFS= read -r blob_file; do
+              if [ -f "$SUP_DIR/$blob_file" ]; then
+                echo "Copying $blob_file to x86..."
+                cp "$SUP_DIR/$blob_file" temp/x86/
+              else
+                echo "Warning: $blob_file not found in 32-bit release"
+              fi
+            done < temp/blobs_list.txt
+            
+            # Copy LICENSE.progwrp.md
+            cp LICENSE.progwrp.md temp/x86/
+          else
+            echo "Error: Could not find supermium_*_32 directory"
+            exit 1
+          fi
+        else
+          echo "Error: Could not find 32-bit non-setup zip file"
+          exit 1
+        fi
+    
+    - name: Download and extract 64-bit release
+      run: |
+        LATEST_RELEASE="${{ needs.check-supermium-releases.outputs.latest-release }}"
+        
+        # Find the 64-bit non-setup zip file
+        RELEASE_ASSETS=$(gh api repos/win32ss/supermium/releases/latest --jq '.assets[] | select(.name | contains("64_non_setup.zip")) | .browser_download_url')
+        
+        if [ -n "$RELEASE_ASSETS" ]; then
+          echo "Downloading 64-bit release..."
+          wget -O temp/supermium_64.zip "$RELEASE_ASSETS"
+          
+          # Extract the zip
+          unzip -q temp/supermium_64.zip -d temp/extract_64/
+          
+          # Find the supermium_*_64 directory
+          SUP_DIR=$(find temp/extract_64/ -name "supermium_*_64" -type d | head -n 1)
+          
+          if [ -n "$SUP_DIR" ]; then
+            echo "Found Supermium directory: $SUP_DIR"
+            
+            # Extract blob files
+            while IFS= read -r blob_file; do
+              if [ -f "$SUP_DIR/$blob_file" ]; then
+                echo "Copying $blob_file to x86_64..."
+                cp "$SUP_DIR/$blob_file" temp/x86_64/
+              else
+                echo "Warning: $blob_file not found in 64-bit release"
+              fi
+            done < temp/blobs_list.txt
+            
+            # Copy LICENSE.progwrp.md
+            cp LICENSE.progwrp.md temp/x86_64/
+          else
+            echo "Error: Could not find supermium_*_64 directory"
+            exit 1
+          fi
+        else
+          echo "Error: Could not find 64-bit non-setup zip file"
+          exit 1
+        fi
+    
+    - name: Create zip archives
+      run: |
+        LATEST_RELEASE="${{ needs.check-supermium-releases.outputs.latest-release }}"
+        
+        # Create x86 zip
+        cd temp/x86
+        zip -r "../../progwrp_blobs-x86.zip" .
+        cd ../..
+        
+        # Create x86_64 zip
+        cd temp/x86_64
+        zip -r "../../progwrp_blobs-x86_64.zip" .
+        cd ../..
+        
+        echo "Created zip archives for release $LATEST_RELEASE"
+    
+    - name: Get latest release for upload
+      id: get_latest_release
+      run: |
+        LATEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/latest --jq '.id')
+        echo "release_id=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Delete existing blob archives
+      run: |
+        # Get all assets for the latest release
+        ASSETS=$(gh api repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets --jq '.[] | select(.name | contains("progwrp_blobs")) | .id')
+        
+        # Delete each existing asset
+        for asset_id in $ASSETS; do
+          echo "Deleting asset ID: $asset_id"
+          gh api repos/${{ github.repository }}/releases/assets/$asset_id -X DELETE
+        done
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload x86 blob archive
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets
+        asset_path: ./progwrp_blobs-x86.zip
+        asset_name: progwrp_blobs-x86.zip
+        asset_content_type: application/zip
+    
+    - name: Upload x86_64 blob archive
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets
+        asset_path: ./progwrp_blobs-x86_64.zip
+        asset_name: progwrp_blobs-x86_64.zip
+        asset_content_type: application/zip
+    
+    - name: Update last processed release
+      run: |
+        echo "${{ needs.check-supermium-releases.outputs.latest-release }}" > .last_supermium_release
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .last_supermium_release
+        git commit -m "Update last processed Supermium release to ${{ needs.check-supermium-releases.outputs.latest-release }}"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

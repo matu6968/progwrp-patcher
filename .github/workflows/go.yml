@@ -1,12 +1,12 @@
-# This workflow will build a golang project for multiple platforms and create releases
+# This workflow will build a golang project for multiple platforms and update releases
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
 
 name: Build and Release
 
 on:
   push:
-    tags:
-      - 'progwrp*'
+    branches:
+      - main
 
 jobs:
   build:
@@ -59,27 +59,33 @@ jobs:
         GOARCH: ${{ matrix.arch }}
       run: go build -v -o progwrp-patcher-${{ matrix.suffix }} ./...
 
+    - name: Get latest release
+      id: get_latest_release
+      run: |
+        LATEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/latest --jq '.id')
+        echo "release_id=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Delete existing assets
+      run: |
+        # Get all assets for the latest release
+        ASSETS=$(gh api repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets --jq '.[] | select(.name | contains("progwrp-patcher") and (.name | endswith(".zip") | not)) | .id')
+        
+        # Delete each existing asset
+        for asset_id in $ASSETS; do
+          echo "Deleting asset ID: $asset_id"
+          gh api repos/${{ github.repository }}/releases/assets/$asset_id -X DELETE
+        done
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Upload Release Assets
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        upload_url: https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.get_latest_release.outputs.release_id }}/assets
         asset_path: ./progwrp-patcher-${{ matrix.suffix }}
         asset_name: progwrp-patcher-${{ matrix.suffix }}
         asset_content_type: application/octet-stream
-
-  create_release:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false

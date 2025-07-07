@@ -51,3 +51,7 @@ progwrp is not a magical tool that can make all binaries compiled to only run on
 Unfortunantely the creator of progwrp (aka win32ss) assumes all unimplemented functions that don't exist on XP will stop an application from running and do the above, until then you can try to use other tools that can patch the system to get the binary to work on Windows XP such as [OneCoreAPI](https://github.com/shorthorn-project/One-Core-API-Binaries) or if you are a application developer, you can try to implement something like [YY-Thunks](https://github.com/Chuyu-Team/YY-Thunks).
 
 If you are a user of progwrp, try patching a different program and post your results in the [Issue](https://github.com/matu6968/progwrp-patcher/issues/new) section.
+
+## License
+
+For progwrp binaries, see [LICENSE.progwrp.md](LICENSE.progwrp.md), else (for the patcher) see [LICENSE.md](LICENSE.md)

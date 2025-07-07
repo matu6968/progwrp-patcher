@@ -40,7 +40,7 @@ body:
     attributes:
       label: Patching Process
       description: Describe how you patched the application with progwrp
-      placeholder: "e.g., Used command: progwrp-patcher.exe -i application.exe, patched all DLLs in directory with -r flag, etc."
+      placeholder: "e.g., Used command - progwrp-patcher.exe -i application.exe, patched all DLLs in directory with -r flag, etc."
     validations:
       required: true
 
