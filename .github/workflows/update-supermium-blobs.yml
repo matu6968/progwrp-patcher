@@ -184,14 +184,16 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Upload blob archives
-      uses: softprops/action-gh-release@v2
+      run: |
+        # Get the latest release tag
+        LATEST_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name')
+        echo "Uploading to release: $LATEST_TAG"
+        
+        # Upload both zip files with clobber to replace existing ones
+        gh release upload "$LATEST_TAG" progwrp_blobs-x86.zip --clobber
+        gh release upload "$LATEST_TAG" progwrp_blobs-x86_64.zip --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        files: |
-          progwrp_blobs-x86.zip
-          progwrp_blobs-x86_64.zip
-        update_existing: true
     
     - name: Update last processed release
       run: |
