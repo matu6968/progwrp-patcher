@@ -287,28 +287,231 @@ func patchFile(path, arch string, debug bool) error {
 
 	patched := false
 	var importedDlls []string // Track which DLLs will be imported after patching
+	var progwrpDlls []string  // Track only the progwrp DLLs we need to copy
+
+	// Get import table bounds to constrain our search
+	var importTableStart, importTableEnd uint32
+	if pe.NtHeader.OptionalHeader != nil {
+		if debug {
+			fmt.Printf("[DEBUG] OptionalHeader type: %T\n", pe.NtHeader.OptionalHeader)
+		}
+		// Type assert to get the correct optional header type
+		switch optHdr := pe.NtHeader.OptionalHeader.(type) {
+		case *pefile.ImageOptionalHeader32:
+			if debug {
+				fmt.Printf("[DEBUG] Processing 32-bit PE (pointer), DataDirectory length: %d\n", len(optHdr.DataDirectory))
+			}
+			if len(optHdr.DataDirectory) > 1 {
+				importTableDir := optHdr.DataDirectory[1] // Import table is directory entry 1
+				importTableRVA := importTableDir.VirtualAddress
+				importTableSize := importTableDir.Size
+
+				if debug {
+					fmt.Printf("[DEBUG] Import table RVA: 0x%x, Size: 0x%x\n", importTableRVA, importTableSize)
+				}
+
+				if importTableRVA != 0 && importTableSize != 0 {
+					// Convert RVA to file offset
+					if start, err := rvaToOffset(data, importTableRVA); err == nil {
+						importTableStart = start
+						importTableEnd = start + importTableSize
+						if debug {
+							fmt.Printf("[DEBUG] Import table bounds: 0x%x - 0x%x\n", importTableStart, importTableEnd)
+						}
+					} else if debug {
+						fmt.Printf("[DEBUG] Failed to convert RVA to offset: %v\n", err)
+					}
+				}
+			}
+		case pefile.ImageOptionalHeader32:
+			if debug {
+				fmt.Printf("[DEBUG] Processing 32-bit PE (value), DataDirectory length: %d\n", len(optHdr.DataDirectory))
+			}
+			if len(optHdr.DataDirectory) > 1 {
+				importTableDir := optHdr.DataDirectory[1] // Import table is directory entry 1
+				importTableRVA := importTableDir.VirtualAddress
+				importTableSize := importTableDir.Size
+
+				if debug {
+					fmt.Printf("[DEBUG] Import table RVA: 0x%x, Size: 0x%x\n", importTableRVA, importTableSize)
+				}
+
+				if importTableRVA != 0 && importTableSize != 0 {
+					// Convert RVA to file offset
+					if start, err := rvaToOffset(data, importTableRVA); err == nil {
+						importTableStart = start
+						importTableEnd = start + importTableSize
+						if debug {
+							fmt.Printf("[DEBUG] Import table bounds: 0x%x - 0x%x\n", importTableStart, importTableEnd)
+						}
+					} else if debug {
+						fmt.Printf("[DEBUG] Failed to convert RVA to offset: %v\n", err)
+					}
+				}
+			}
+		case *pefile.ImageOptionalHeader64:
+			if debug {
+				fmt.Printf("[DEBUG] Processing 64-bit PE (pointer), DataDirectory length: %d\n", len(optHdr.DataDirectory))
+			}
+			if len(optHdr.DataDirectory) > 1 {
+				importTableDir := optHdr.DataDirectory[1] // Import table is directory entry 1
+				importTableRVA := importTableDir.VirtualAddress
+				importTableSize := importTableDir.Size
+
+				if debug {
+					fmt.Printf("[DEBUG] Import table RVA: 0x%x, Size: 0x%x\n", importTableRVA, importTableSize)
+				}
+
+				if importTableRVA != 0 && importTableSize != 0 {
+					// Convert RVA to file offset
+					if start, err := rvaToOffset(data, importTableRVA); err == nil {
+						importTableStart = start
+						importTableEnd = start + importTableSize
+						if debug {
+							fmt.Printf("[DEBUG] Import table bounds: 0x%x - 0x%x\n", importTableStart, importTableEnd)
+						}
+					} else if debug {
+						fmt.Printf("[DEBUG] Failed to convert RVA to offset: %v\n", err)
+					}
+				}
+			}
+		case pefile.ImageOptionalHeader64:
+			if debug {
+				fmt.Printf("[DEBUG] Processing 64-bit PE (value), DataDirectory length: %d\n", len(optHdr.DataDirectory))
+			}
+			if len(optHdr.DataDirectory) > 1 {
+				importTableDir := optHdr.DataDirectory[1] // Import table is directory entry 1
+				importTableRVA := importTableDir.VirtualAddress
+				importTableSize := importTableDir.Size
+
+				if debug {
+					fmt.Printf("[DEBUG] Import table RVA: 0x%x, Size: 0x%x\n", importTableRVA, importTableSize)
+				}
+
+				if importTableRVA != 0 && importTableSize != 0 {
+					// Convert RVA to file offset
+					if start, err := rvaToOffset(data, importTableRVA); err == nil {
+						importTableStart = start
+						importTableEnd = start + importTableSize
+						if debug {
+							fmt.Printf("[DEBUG] Import table bounds: 0x%x - 0x%x\n", importTableStart, importTableEnd)
+						}
+					} else if debug {
+						fmt.Printf("[DEBUG] Failed to convert RVA to offset: %v\n", err)
+					}
+				}
+			}
+		default:
+			if debug {
+				fmt.Printf("[DEBUG] Unknown OptionalHeader type: %T\n", optHdr)
+			}
+		}
+	} else if debug {
+		fmt.Printf("[DEBUG] OptionalHeader is nil\n")
+	}
 
 	for _, imp := range pe.Imports {
 		origDLL := imp.Name
 		lowDLL := strings.ToLower(origDLL)
 		if replacement, ok := mapping[lowDLL]; ok {
 			fmt.Printf("patching import: %s -> %s\n", origDLL, replacement)
+
 			needle := []byte(origDLL + "\x00")
 			replacementBytes := []byte(replacement + "\x00")
 			if len(replacementBytes) > len(needle) {
-				return fmt.Errorf("replacement name too long for %s", origDLL)
+				fmt.Printf("warning: replacement name too long for %s, skipping\n", origDLL)
+				continue
 			}
-			for i := 0; i < len(data)-len(needle); i++ {
-				if string(data[i:i+len(needle)]) == string(needle) {
-					copy(data[i:i+len(replacementBytes)], replacementBytes)
-					for j := i + len(replacementBytes); j < i+len(needle); j++ {
-						data[j] = 0
+
+			// Count total occurrences in the file for debugging
+			if debug {
+				count := 0
+				for i := uint32(0); i < uint32(len(data))-uint32(len(needle)); i++ {
+					if string(data[i:i+uint32(len(needle))]) == string(needle) {
+						count++
 					}
-					patched = true
+				}
+				fmt.Printf("[DEBUG] Found %d total occurrences of %s in file\n", count, origDLL)
+			}
+
+			foundAndPatched := false
+			// Search within import table bounds if available, otherwise full file
+			searchStart := uint32(0)
+			searchEnd := uint32(len(data))
+
+			if importTableStart != 0 && importTableEnd != 0 && importTableEnd > importTableStart {
+				// Expand search to include nearby sections that might contain import strings
+				// Import table usually just contains descriptors, strings are in .rdata/.idata
+				searchStart = importTableStart
+				// Expand search area to cover potential string sections
+				if importTableEnd+0x10000 < uint32(len(data)) {
+					searchEnd = importTableEnd + 0x10000 // Search 64KB after import table
+				} else {
+					searchEnd = uint32(len(data))
+				}
+				if debug {
+					fmt.Printf("[DEBUG] Searching for %s in expanded import region 0x%x - 0x%x\n", origDLL, searchStart, searchEnd)
+				}
+			} else {
+				if debug {
+					fmt.Printf("[DEBUG] Searching for %s in entire file (import table bounds not available)\n", origDLL)
 				}
 			}
+
+			for i := searchStart; i < searchEnd-uint32(len(needle)); i++ {
+				if string(data[i:i+uint32(len(needle))]) == string(needle) {
+					if debug {
+						fmt.Printf("[DEBUG] Found %s at offset 0x%x\n", origDLL, i)
+					}
+					copy(data[i:i+uint32(len(replacementBytes))], replacementBytes)
+					for j := i + uint32(len(replacementBytes)); j < i+uint32(len(needle)); j++ {
+						data[j] = 0
+					}
+					foundAndPatched = true
+					patched = true
+					if debug {
+						// Verify the replacement
+						replacedName := string(data[i : i+uint32(len(replacement))])
+						fmt.Printf("[DEBUG] Verified replacement: %s -> %s\n", origDLL, replacedName)
+					}
+					break // Only patch first occurrence within region
+				}
+			}
+
+			if !foundAndPatched {
+				if debug {
+					fmt.Printf("[DEBUG] Not found in constrained region, trying full file search for %s\n", origDLL)
+				}
+				// Fallback to full file search if constrained search failed
+				for i := uint32(0); i < uint32(len(data))-uint32(len(needle)); i++ {
+					if string(data[i:i+uint32(len(needle))]) == string(needle) {
+						if debug {
+							fmt.Printf("[DEBUG] Found %s at offset 0x%x (full file search)\n", origDLL, i)
+						}
+						copy(data[i:i+uint32(len(replacementBytes))], replacementBytes)
+						for j := i + uint32(len(replacementBytes)); j < i+uint32(len(needle)); j++ {
+							data[j] = 0
+						}
+						foundAndPatched = true
+						patched = true
+						if debug {
+							// Verify the replacement
+							replacedName := string(data[i : i+uint32(len(replacement))])
+							fmt.Printf("[DEBUG] Verified replacement: %s -> %s (full file search)\n", origDLL, replacedName)
+						}
+						break // Only patch first occurrence
+					}
+				}
+			}
+
+			if !foundAndPatched {
+				fmt.Printf("warning: could not find %s in import table, skipping\n", origDLL)
+				continue
+			}
+
 			// Add the replacement DLL to our list
 			importedDlls = append(importedDlls, strings.ToLower(replacement))
+			progwrpDlls = append(progwrpDlls, strings.ToLower(replacement))
 		} else {
 			// Keep track of DLLs that weren't replaced
 			importedDlls = append(importedDlls, lowDLL)
@@ -328,13 +531,17 @@ func patchFile(path, arch string, debug bool) error {
 			for _, dll := range importedDlls {
 				fmt.Printf("%s ", dll)
 			}
+			fmt.Printf("\n[DEBUG] Progwrp DLLs to copy: ")
+			for _, dll := range progwrpDlls {
+				fmt.Printf("%s ", dll)
+			}
 			fmt.Printf("\n[DEBUG] Mapping contents:\n")
 			for k, v := range mapping {
 				fmt.Printf("  key: '%s' (len=%d), value: '%s' (len=%d)\n", k, len(k), v, len(v))
 			}
 		}
-		fmt.Printf("[DEBUG] Copying progwrp DLLs: ")
-		for _, dll := range importedDlls {
+		fmt.Printf("Copying progwrp DLLs: ")
+		for _, dll := range progwrpDlls {
 			if debug {
 				fmt.Printf("%s ", dll)
 			}
