@@ -77,7 +77,7 @@ jobs:
         LATEST_RELEASE="${{ needs.check-supermium-releases.outputs.latest-release }}"
         
         # Find the 32-bit non-setup zip file
-        RELEASE_ASSETS=$(gh api repos/win32ss/supermium/releases/latest --jq '.assets[] | select(.name | contains("32_non_setup.zip")) | .browser_download_url')
+        RELEASE_ASSETS=$(gh api repos/win32ss/supermium/releases/latest --jq '.assets[] | select(.name | contains("32_nonsetup.zip")) | .browser_download_url')
         
         if [ -n "$RELEASE_ASSETS" ]; then
           echo "Downloading 32-bit release..."
@@ -118,7 +118,7 @@ jobs:
         LATEST_RELEASE="${{ needs.check-supermium-releases.outputs.latest-release }}"
         
         # Find the 64-bit non-setup zip file
-        RELEASE_ASSETS=$(gh api repos/win32ss/supermium/releases/latest --jq '.assets[] | select(.name | contains("64_non_setup.zip")) | .browser_download_url')
+        RELEASE_ASSETS=$(gh api repos/win32ss/supermium/releases/latest --jq '.assets[] | select(.name | contains("64_nonsetup.zip")) | .browser_download_url')
         
         if [ -n "$RELEASE_ASSETS" ]; then
           echo "Downloading 64-bit release..."
