@@ -53,6 +53,8 @@ jobs:
     needs: check-supermium-releases
     if: needs.check-supermium-releases.outputs.has-new-release == 'true'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     steps:
     - uses: actions/checkout@v4
