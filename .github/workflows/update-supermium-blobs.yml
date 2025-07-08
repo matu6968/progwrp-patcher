@@ -86,8 +86,8 @@ jobs:
           # Extract the zip
           unzip -q temp/supermium_32.zip -d temp/extract_32/
           
-          # Find the supermium_*_32 directory
-          SUP_DIR=$(find temp/extract_32/ -name "supermium_*_32" -type d | head -n 1)
+          # Find the Supermium directory
+          SUP_DIR=$(find temp/extract_32/ -name "Supermium" -type d | head -n 1)
           
           if [ -n "$SUP_DIR" ]; then
             echo "Found Supermium directory: $SUP_DIR"
@@ -105,7 +105,7 @@ jobs:
             # Copy LICENSE.progwrp.md
             cp LICENSE.progwrp.md temp/x86/
           else
-            echo "Error: Could not find supermium_*_32 directory"
+            echo "Error: Could not find supermium_32 directory"
             exit 1
           fi
         else
@@ -127,8 +127,8 @@ jobs:
           # Extract the zip
           unzip -q temp/supermium_64.zip -d temp/extract_64/
           
-          # Find the supermium_*_64 directory
-          SUP_DIR=$(find temp/extract_64/ -name "supermium_*_64" -type d | head -n 1)
+          # Find the Supermium directory
+          SUP_DIR=$(find temp/extract_64/ -name "Supermium" -type d | head -n 1)
           
           if [ -n "$SUP_DIR" ]; then
             echo "Found Supermium directory: $SUP_DIR"
@@ -146,7 +146,7 @@ jobs:
             # Copy LICENSE.progwrp.md
             cp LICENSE.progwrp.md temp/x86_64/
           else
-            echo "Error: Could not find supermium_*_64 directory"
+            echo "Error: Could not find supermium_64 directory"
             exit 1
           fi
         else
