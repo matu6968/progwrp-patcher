@@ -222,8 +222,13 @@ jobs:
         echo "${{ needs.check-supermium-releases.outputs.latest-release }}" > .last_supermium_release
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add .last_supermium_release
-        git commit -m "Update last processed Supermium release to ${{ needs.check-supermium-releases.outputs.latest-release }}"
-        git push
+        # Stage the file if it has changed
+        if ! git diff --quiet -- .last_supermium_release; then
+          git add .last_supermium_release
+          git commit -m "Update last processed Supermium release to ${{ needs.check-supermium-releases.outputs.latest-release }}"
+          git push
+        else
+          echo "No changes to commit."
+        fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
